@@ -1,0 +1,25 @@
+S-Series Explorer - Projektregeln
+Version: 1.0.0
+
+1. Ziel
+- Das Programm ist ein offline nutzbarer Datei-Explorer.
+- Es soll als eigenständige Windows-EXE gebaut werden können.
+- Externe Netzwerkdienste dürfen zur Laufzeit nicht benötigt werden.
+
+2. Technologieentscheidung
+- Die Anwendung wird in Python 3 mit Tkinter umgesetzt.
+- Begründung: Tkinter ist in Standard-Python enthalten, benötigt keine zusätzlichen GUI-Abhängigkeiten und lässt sich mit PyInstaller in eine einzelne EXE bündeln.
+
+3. Versionsregeln
+- Jede Script-Datei enthält genau eine Versionsnummer in der Form __version__ = "x.y.z".
+- Wenn eine Script-Datei geändert wird, muss ihre Versionsnummer erhöht werden.
+- Alte Versionsnummern müssen entfernt werden, sodass pro Datei nur eine Versionsnummer existiert.
+
+4. Änderungsprozess
+- Diese Datei muss vor Änderungen an Scripts gelesen werden.
+- Neue Programmregeln sollen hier ergänzt werden.
+
+5. Laufzeitregeln
+- Dateioperationen sollen lokale Dateisysteme verwenden.
+- Kritische Dateioperationen wie Löschen müssen eine Bestätigung anzeigen.
+- Fehler sollen als Dialog angezeigt werden, damit die Anwendung nicht still abstürzt.
