@@ -1,5 +1,5 @@
 S-Series Explorer - Programmregeln
-Version: 1.3.0
+Version: 1.4.0
 
 1. Vor jeder Codeänderung muss diese Datei gelesen werden.
 2. Wenn einzelne Skripte geändert werden, muss deren Versionsnummer erhöht werden.
@@ -10,3 +10,5 @@ Version: 1.3.0
 6. Der Hauptbildschirm soll direkt als Explorer nutzbar sein: Adresseingabe, Navigation, Öffnen, Kopieren, Ausschneiden, Einfügen, Umbenennen, Löschen und neue Ordner müssen ohne externes Durchsuchen erreichbar sein.
 
 7. Der Ordnervergleich soll eine separate auswählbare Funktion sein und nicht als gleichrangiger Standard-Explorer-Knopf erscheinen.
+
+8. Der normale Windows-Start soll ohne dauerhaft sichtbares Terminalfenster erfolgen. Fuer Fehlersuche darf ein separater Konsolenstart dokumentiert sein.

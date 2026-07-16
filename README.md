@@ -29,7 +29,9 @@ Ein kompakter Windows-Dateiexplorer für S-Series-/S1000D-Arbeitsbestände.
 .\run.bat
 ```
 
-Alternativ direkt mit Python:
+Beim Doppelklick startet `run.bat` die grafische Anwendung ueber `pyw`/`pythonw` und schliesst das Startfenster sofort wieder. Falls Windows weiterhin ein Terminalfenster offen haelt, starten Sie alternativ direkt `launcher.pyw`.
+
+Technischer Konsolenstart fuer Fehlersuche:
 
 ```powershell
 py .\launcher.py
