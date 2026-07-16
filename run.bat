@@ -1,12 +1,16 @@
 @echo off
+rem Version: 1.2.0
 setlocal
 cd /d "%~dp0"
-py "%~dp0launcher.py"
-if errorlevel 1 (
-    echo.
-    echo S-Series Explorer konnte nicht gestartet werden.
-    echo Bitte pruefen Sie, ob Python 3.11 oder neuer installiert ist.
-    pause
-    exit /b 1
+
+if exist "%SystemRoot%\System32\wscript.exe" (
+    start "" "%SystemRoot%\System32\wscript.exe" "%~dp0start_windowless.vbs"
+    endlocal
+    exit /b 0
 )
-endlocal
+
+echo S-Series Explorer konnte nicht ohne Terminalfenster gestartet werden.
+echo Windows Script Host ^(wscript.exe^) wurde nicht gefunden oder ist deaktiviert.
+echo Technischer Konsolenstart: py "%~dp0launcher.py"
+pause
+exit /b 1
