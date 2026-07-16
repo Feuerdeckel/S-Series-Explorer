@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import BOTH, END, LEFT, RIGHT, X, Y, Button, Entry, Frame, Label, Menu, Tk, filedialog, messagebox, simpledialog, ttk
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 
 @dataclass(frozen=True)
@@ -76,8 +76,8 @@ class SSeriesExplorer:
         self.tree.bind("<Return>", lambda _event: self.open_selected())
         self.tree.bind("<Button-3>", self.show_context_menu)
 
-        bottom = Frame(self.root, padx=8, pady=(0, 8))
-        bottom.pack(fill=X)
+        bottom = Frame(self.root, padx=8)
+        bottom.pack(fill=X, pady=(0, 8))
         Button(bottom, text="Neuer Ordner", command=self.create_folder).pack(side=LEFT, padx=(0, 4))
         Button(bottom, text="Neue Datei", command=self.create_file).pack(side=LEFT, padx=4)
         Button(bottom, text="Kopieren", command=lambda: self.copy_or_cut("copy")).pack(side=LEFT, padx=4)
