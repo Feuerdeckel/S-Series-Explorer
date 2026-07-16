@@ -5,15 +5,20 @@ on:
     paths:
       - ".bootstrap/**"
       - ".github/workflows/bootstrap.yml"
+  issues:
+    types: [opened]
 
 permissions:
   contents: write
 
 jobs:
   import-source:
+    if: github.event_name != 'issues' || github.event.issue.title == 'IMPORT S-SERIES EXPLORER'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Reconstruct source archive
         shell: bash
