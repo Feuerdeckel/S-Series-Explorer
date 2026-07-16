@@ -1,6 +1,6 @@
 # S-Series Explorer
 
-Ein kompakter Windows-Dateiexplorer für S-Series-/S1000D-Arbeitsbestände.
+Ein kompakter Windows-Dateiexplorer für S-Series-/S1000D-Arbeitsbestände. Die aktive GUI wurde in C# / Windows Forms neu aufgebaut, damit sie ohne Python-Tkinter startet und sich stärker wie ein nativer Windows-Explorer verhält.
 
 ## Funktionen
 
@@ -21,40 +21,32 @@ Ein kompakter Windows-Dateiexplorer für S-Series-/S1000D-Arbeitsbestände.
 
 ## Start unter Windows
 
-1. Python 3.11 oder neuer installieren. Bei der Installation `tkinter` aktiviert lassen.
+1. .NET 8 Desktop Runtime oder .NET 8 SDK installieren.
 2. Das Repository herunterladen oder klonen.
-3. Ohne Installation und ohne Internetzugriff starten:
+3. Ohne Python starten:
 
 ```powershell
 .\run.bat
 ```
 
-Beim Doppelklick startet `run.bat` die grafische Anwendung ueber den Windows Script Host im Hintergrund und schliesst das Startfenster sofort wieder. Falls der Start fehlschlaegt, werden technische Details in `startup.log` im Programmordner geschrieben. Alternativ kann direkt `launcher.pyw` gestartet werden.
+Beim Doppelklick startet `run.bat` die C#-Windows-Forms-Anwendung ueber den Windows Script Host im Hintergrund und schliesst das Startfenster sofort wieder. Falls der Start fehlschlaegt, werden technische Details in `startup.log` im Programmordner geschrieben.
 
 Technischer Konsolenstart fuer Fehlersuche:
 
 ```powershell
-py .\launcher.py
+dotnet run --project .\SSeriesExplorer.WinForms\SSeriesExplorer.WinForms.csproj
 ```
 
-Der portable Start benötigt weder `pip` noch externe Python-Pakete. Dadurch funktioniert er auch in Firmennetzen, in denen ein Proxy den Zugriff auf PyPI blockiert.
+Der neue Start benötigt kein Python, kein `pip` und keine Tkinter-Komponenten. Für eine einzelne EXE kann die Anwendung mit `dotnet publish` veröffentlicht werden.
 
-### Optionale Installation
+### Optionale Veröffentlichung
 
-Nur wenn ein Kommando wie `s-series-explorer` systemweit verfügbar sein soll:
-
-```powershell
-py -m pip install --no-build-isolation --no-deps -e .
-s-series-explorer
-```
-
-`--no-build-isolation` verhindert, dass `pip` für den Build erneut `setuptools` aus dem Internet herunterladen will. Sollte die lokale `setuptools`-Version zu alt sein, verwenden Sie stattdessen den portablen Start über `run.bat`.
+Wenn keine SDK-Installation auf dem Zielrechner gewünscht ist, kann eine portable Windows-EXE gebaut und der veröffentlichte Ordner verteilt werden.
 
 ## Windows-EXE bauen
 
 ```powershell
-py -m pip install pyinstaller
-pyinstaller --noconfirm --clean --onefile --windowed --paths src --name S-Series-Explorer launcher.py
+dotnet publish .\SSeriesExplorer.WinForms\SSeriesExplorer.WinForms.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
 Die GitHub-Action `build-windows.yml` erzeugt ebenfalls eine EXE als Workflow-Artefakt.
@@ -73,8 +65,12 @@ Die Zuordnung von Formatcodes zu Produktgenerationen ist eine Best-Effort-Anzeig
 ## Projektstruktur
 
 ```text
+SSeriesExplorer.WinForms/
+  Program.cs           C#-Startpunkt und Fehlerprotokoll
+  MainForm.cs          Native Windows-Forms-Exploreroberfläche
+
 src/s_series_explorer/
-  app.py               Desktop-Oberfläche
+  app.py               Legacy-Python-Oberfläche
   filename_parser.py   Dateinamensegmentierung und S1000D-nahe Interpretation
   scanner.py           Ordnerscan und SHA-256
   compare.py           Vergleichslogik
