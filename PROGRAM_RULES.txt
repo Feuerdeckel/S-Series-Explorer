@@ -1,5 +1,5 @@
 S-Series Explorer - Programmregeln
-Version: 1.5.0
+Version: 1.6.0
 
 1. Vor jeder Codeänderung muss diese Datei gelesen werden.
 2. Wenn einzelne Skripte geändert werden, muss deren Versionsnummer erhöht werden.
