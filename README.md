@@ -29,7 +29,7 @@ Ein kompakter Windows-Dateiexplorer für S-Series-/S1000D-Arbeitsbestände. Die 
 .\run.bat
 ```
 
-Beim Doppelklick startet `run.bat` die C#-Windows-Forms-Anwendung ueber den Windows Script Host im Hintergrund und schliesst das Startfenster sofort wieder. Falls der Start fehlschlaegt, werden technische Details in `startup.log` im Programmordner geschrieben.
+Beim Doppelklick startet `run.bat` die C#-Windows-Forms-Anwendung ueber den Windows Script Host im Hintergrund und schliesst das Startfenster sofort wieder. Wenn eine veroeffentlichte EXE vorhanden ist, wird diese direkt gestartet. Sonst wird `dotnet run` verwendet. Falls .NET fehlt oder die Projektdatei nicht gefunden wird, erscheint eine Fehlermeldung und technische Details werden in `startup.log` im Programmordner geschrieben.
 
 Technischer Konsolenstart fuer Fehlersuche:
 
