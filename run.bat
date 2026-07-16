@@ -1,24 +1,16 @@
 @echo off
-rem Version: 1.1.0
+rem Version: 1.2.0
 setlocal
 cd /d "%~dp0"
 
-where pyw >nul 2>nul
-if %errorlevel% equ 0 (
-    start "" pyw "%~dp0launcher.py"
-    endlocal
-    exit /b 0
-)
-
-where pythonw >nul 2>nul
-if %errorlevel% equ 0 (
-    start "" pythonw "%~dp0launcher.py"
+if exist "%SystemRoot%\System32\wscript.exe" (
+    start "" "%SystemRoot%\System32\wscript.exe" "%~dp0start_windowless.vbs"
     endlocal
     exit /b 0
 )
 
 echo S-Series Explorer konnte nicht ohne Terminalfenster gestartet werden.
-echo Bitte pruefen Sie, ob Python 3.11 oder neuer inklusive pyw/pythonw installiert ist.
-echo Alternativ kann der technische Konsolenstart mit "py launcher.py" verwendet werden.
+echo Windows Script Host ^(wscript.exe^) wurde nicht gefunden oder ist deaktiviert.
+echo Technischer Konsolenstart: py "%~dp0launcher.py"
 pause
 exit /b 1

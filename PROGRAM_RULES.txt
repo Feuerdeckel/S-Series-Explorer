@@ -1,5 +1,5 @@
 S-Series Explorer - Programmregeln
-Version: 1.4.0
+Version: 1.5.0
 
 1. Vor jeder Codeänderung muss diese Datei gelesen werden.
 2. Wenn einzelne Skripte geändert werden, muss deren Versionsnummer erhöht werden.
@@ -12,3 +12,4 @@ Version: 1.4.0
 7. Der Ordnervergleich soll eine separate auswählbare Funktion sein und nicht als gleichrangiger Standard-Explorer-Knopf erscheinen.
 
 8. Der normale Windows-Start soll ohne dauerhaft sichtbares Terminalfenster erfolgen. Fuer Fehlersuche darf ein separater Konsolenstart dokumentiert sein.
+9. Fehler beim fensterlosen Start sollen in startup.log nachvollziehbar sein.
