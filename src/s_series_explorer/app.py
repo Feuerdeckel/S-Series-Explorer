@@ -15,7 +15,7 @@ from .csv_export import export_rows
 from .models import ComparisonRow, FileRecord
 from .scanner import scan_folder
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 _COLUMNS = [
     ("status", "Vergleich", 115),
@@ -235,49 +235,74 @@ class SSeriesExplorerApp(tk.Tk):
 
         toolbar = ttk.Frame(self, padding=12, style="Card.TFrame")
         toolbar.grid(row=1, column=0, sticky="ew", padx=14, pady=(4, 10))
-        toolbar.columnconfigure(1, weight=1)
+        toolbar.columnconfigure(4, weight=1)
 
-        ttk.Label(toolbar, text="Adresse / Ordner A").grid(
-            row=0, column=0, sticky="w", padx=(0, 6)
+        ttk.Button(toolbar, text="◀", width=3, command=self.go_back).grid(
+            row=0, column=0, padx=(0, 4)
         )
-        ttk.Entry(toolbar, textvariable=self.folder_a).grid(
-            row=0, column=1, sticky="ew"
+        ttk.Button(toolbar, text="▶", width=3, command=self.go_forward).grid(
+            row=0, column=1, padx=(0, 4)
         )
+        ttk.Button(toolbar, text="↑", width=3, command=self.go_up).grid(
+            row=0, column=2, padx=(0, 8)
+        )
+        ttk.Label(toolbar, text="Adresse").grid(
+            row=0, column=3, sticky="w", padx=(0, 6)
+        )
+        address = ttk.Entry(toolbar, textvariable=self.folder_a)
+        address.grid(row=0, column=4, sticky="ew")
+        address.bind("<Return>", lambda _event: self.open_address())
         ttk.Button(
-            toolbar,
-            text="Durchsuchen…",
-            command=lambda: self._choose_folder(self.folder_a),
-        ).grid(row=0, column=2, padx=6)
+            toolbar, text="Öffnen", command=self.open_address, style="Accent.TButton"
+        ).grid(row=0, column=5, padx=(6, 0))
 
-        ttk.Label(toolbar, text="Ordner B").grid(
-            row=1, column=0, sticky="w", padx=(0, 6), pady=(6, 0)
+        actions = ttk.Frame(toolbar, style="Card.TFrame")
+        actions.grid(row=1, column=0, columnspan=6, sticky="ew", pady=(8, 0))
+        ttk.Button(actions, text="Neuer Ordner", command=self.create_folder).grid(
+            row=0, column=0, padx=(0, 4)
         )
-        ttk.Entry(toolbar, textvariable=self.folder_b).grid(
-            row=1, column=1, sticky="ew", pady=(6, 0)
+        ttk.Button(actions, text="Kopieren", command=self.copy_file_selected).grid(
+            row=0, column=1, padx=4
         )
-        ttk.Button(
-            toolbar,
-            text="Durchsuchen…",
-            command=lambda: self._choose_folder(self.folder_b),
-        ).grid(row=1, column=2, padx=6, pady=(6, 0))
-
-        actions = ttk.Frame(toolbar)
-        actions.grid(row=0, column=3, rowspan=2, sticky="ns", padx=(8, 0))
-        ttk.Button(
-            actions, text="Ordner anzeigen", command=self.scan_a, style="Accent.TButton"
-        ).grid(row=0, column=0, padx=2)
-        ttk.Button(
-            actions,
-            text="Vergleichen",
-            command=self.compare_folders,
-            style="Accent.TButton",
-        ).grid(row=0, column=1, padx=2)
+        ttk.Button(actions, text="Ausschneiden", command=self.cut_file_selected).grid(
+            row=0, column=2, padx=4
+        )
+        ttk.Button(actions, text="Einfügen", command=self.paste_file).grid(
+            row=0, column=3, padx=4
+        )
+        ttk.Button(actions, text="Umbenennen", command=self.rename_selected).grid(
+            row=0, column=4, padx=4
+        )
+        ttk.Button(actions, text="Löschen", command=self.delete_selected).grid(
+            row=0, column=5, padx=4
+        )
+        ttk.Button(actions, text="Aktualisieren", command=self.scan_a).grid(
+            row=0, column=6, padx=4
+        )
         ttk.Button(actions, text="CSV exportieren", command=self.export_csv).grid(
-            row=1, column=0, padx=2, pady=(6, 0)
+            row=0, column=7, padx=4
         )
         ttk.Button(actions, text="Leeren", command=self.clear).grid(
-            row=1, column=1, padx=2, pady=(6, 0)
+            row=0, column=8, padx=4
         )
+
+        compare_box = ttk.LabelFrame(
+            toolbar, text="Ordnervergleich", padding=(8, 6), style="Card.TLabelframe"
+        )
+        compare_box.grid(row=2, column=0, columnspan=6, sticky="ew", pady=(8, 0))
+        compare_box.columnconfigure(1, weight=1)
+        ttk.Label(compare_box, text="Ordner B").grid(
+            row=0, column=0, sticky="w", padx=(0, 6)
+        )
+        compare_entry = ttk.Entry(compare_box, textvariable=self.folder_b)
+        compare_entry.grid(row=0, column=1, sticky="ew")
+        compare_entry.bind("<Return>", lambda _event: self.compare_folders())
+        ttk.Button(
+            compare_box,
+            text="Mit aktuellem Ordner vergleichen",
+            command=self.compare_folders,
+            style="Accent.TButton",
+        ).grid(row=0, column=2, padx=(6, 0))
 
         filters = ttk.Frame(self, padding=(12, 10), style="Card.TFrame")
         filters.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 10))
@@ -419,6 +444,15 @@ class SSeriesExplorerApp(tk.Tk):
         self.context_menu.add_command(
             label="Pfad kopieren", command=self.copy_selected_path
         )
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="Kopieren", command=self.copy_file_selected)
+        self.context_menu.add_command(
+            label="Ausschneiden", command=self.cut_file_selected
+        )
+        self.context_menu.add_command(label="Einfügen", command=self.paste_file)
+        self.context_menu.add_command(label="Umbenennen", command=self.rename_selected)
+        self.context_menu.add_command(label="Löschen", command=self.delete_selected)
+        self.context_menu.add_command(label="Neuer Ordner", command=self.create_folder)
 
         self._populate_navigation_roots()
         self.navigate_to(Path.home(), add_history=True)
