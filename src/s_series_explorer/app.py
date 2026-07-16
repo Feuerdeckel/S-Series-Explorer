@@ -15,7 +15,7 @@ from .csv_export import export_rows
 from .models import ComparisonRow, FileRecord
 from .scanner import scan_folder
 
-__version__ = "0.2.2"
+__version__ = "0.3.2"
 
 _COLUMNS = [
     ("status", "Vergleich", 115),
@@ -90,6 +90,8 @@ class SSeriesExplorerApp(tk.Tk):
         self._result_queue: queue.Queue[tuple[str, object]] = queue.Queue()
 
         self._navigation_lookup: dict[str, Path] = {}
+        self._navigation_path_to_item: dict[Path, str] = {}
+        self._navigation_selecting = False
 
         self._configure_styles()
         self._build_ui()
@@ -356,7 +358,8 @@ class SSeriesExplorerApp(tk.Tk):
         navigation_scroll.grid(row=1, column=1, sticky="ns")
         self.navigation_tree.bind("<<TreeviewOpen>>", self._expand_navigation_item)
         self.navigation_tree.bind("<<TreeviewSelect>>", self._select_navigation_item)
-        self.navigation_tree.bind("<Double-1>", lambda _event: self.scan_a())
+        self.navigation_tree.bind("<Double-1>", self._open_navigation_item)
+        self.navigation_tree.bind("<F5>", lambda _event: self.refresh_navigation_tree())
 
         pane = ttk.Panedwindow(main_pane, orient=tk.VERTICAL)
         main_pane.add(pane, weight=5)
@@ -460,11 +463,20 @@ class SSeriesExplorerApp(tk.Tk):
     def _populate_navigation_roots(self) -> None:
         self.navigation_tree.delete(*self.navigation_tree.get_children())
         self._navigation_lookup.clear()
+        self._navigation_path_to_item.clear()
         for root in _navigation_roots():
             label = _navigation_label(root)
             item = self.navigation_tree.insert("", "end", text=label, open=False)
-            self._navigation_lookup[item] = root
+            self._remember_navigation_item(item, root)
             self._add_navigation_placeholder(item, root)
+
+    def refresh_navigation_tree(self) -> None:
+        current = (
+            Path(self.folder_a.get()).expanduser() if self.folder_a.get() else None
+        )
+        self._populate_navigation_roots()
+        if current is not None and current.exists():
+            self._select_navigation_path(current.resolve())
 
     def _expand_navigation_item(self, _event=None) -> None:
         item = self.navigation_tree.focus()
@@ -472,25 +484,38 @@ class SSeriesExplorerApp(tk.Tk):
         if path is not None:
             self._load_navigation_children(item, path)
 
+    def _open_navigation_item(self, event: tk.Event) -> None:
+        item = self.navigation_tree.identify_row(event.y)
+        path = self._navigation_lookup.get(item)
+        if path is not None:
+            self.navigate_to(path, add_history=True)
+
     def _select_navigation_item(self, _event=None) -> None:
+        if self._navigation_selecting:
+            return
         item = self.navigation_tree.focus()
         path = self._navigation_lookup.get(item)
         if path is not None:
             self.navigate_to(path, add_history=True)
 
-    def _load_navigation_children(self, item: str, path: Path) -> None:
+    def _load_navigation_children(
+        self, item: str, path: Path, *, force: bool = False
+    ) -> None:
         children = self.navigation_tree.get_children(item)
-        if (
+        if force:
+            self._forget_navigation_children(item)
+            self.navigation_tree.delete(*children)
+        elif not (
             len(children) == 1
             and self.navigation_tree.item(children[0], "text") == "Lädt…"
         ):
-            self.navigation_tree.delete(children[0])
-        else:
             return
+        else:
+            self.navigation_tree.delete(children[0])
         try:
             directories = sorted(
                 (entry for entry in path.iterdir() if entry.is_dir()),
-                key=lambda entry: entry.name.casefold(),
+                key=lambda entry: (entry.name.startswith("."), entry.name.casefold()),
             )
         except (OSError, PermissionError):
             self.navigation_tree.insert(
@@ -501,8 +526,20 @@ class SSeriesExplorerApp(tk.Tk):
             child = self.navigation_tree.insert(
                 item, "end", text=directory.name or str(directory), open=False
             )
-            self._navigation_lookup[child] = directory
+            self._remember_navigation_item(child, directory)
             self._add_navigation_placeholder(child, directory)
+
+    def _remember_navigation_item(self, item: str, path: Path) -> None:
+        resolved = path.expanduser().resolve()
+        self._navigation_lookup[item] = resolved
+        self._navigation_path_to_item[resolved] = item
+
+    def _forget_navigation_children(self, item: str) -> None:
+        for child in self.navigation_tree.get_children(item):
+            self._forget_navigation_children(child)
+            path = self._navigation_lookup.pop(child, None)
+            if path is not None:
+                self._navigation_path_to_item.pop(path, None)
 
     def _add_navigation_placeholder(self, item: str, path: Path) -> None:
         try:
@@ -511,6 +548,41 @@ class SSeriesExplorerApp(tk.Tk):
             has_child = False
         if has_child:
             self.navigation_tree.insert(item, "end", text="Lädt…")
+
+    def _refresh_current_navigation_branch(self) -> None:
+        current = Path(self.folder_a.get()).expanduser().resolve()
+        item = self._navigation_path_to_item.get(current)
+        if item:
+            self._load_navigation_children(item, current, force=True)
+        parent_item = self._navigation_path_to_item.get(current.parent)
+        if parent_item:
+            self._load_navigation_children(parent_item, current.parent, force=True)
+        self._select_navigation_path(current)
+
+    def _select_navigation_path(self, path: Path) -> None:
+        resolved = path.expanduser().resolve()
+        chain = [resolved, *resolved.parents]
+        root_item = next(
+            (self._navigation_path_to_item.get(parent) for parent in reversed(chain)),
+            None,
+        )
+        if not root_item:
+            return
+        item = root_item
+        for parent in reversed(chain[:-1]):
+            self.navigation_tree.item(item, open=True)
+            self._load_navigation_children(item, self._navigation_lookup[item])
+            next_item = self._navigation_path_to_item.get(parent)
+            if not next_item:
+                return
+            item = next_item
+        self._navigation_selecting = True
+        try:
+            self.navigation_tree.selection_set(item)
+            self.navigation_tree.focus(item)
+            self.navigation_tree.see(item)
+        finally:
+            self._navigation_selecting = False
 
     def _choose_folder(self, variable: tk.StringVar) -> None:
         selected = filedialog.askdirectory(initialdir=variable.get() or None)
@@ -536,6 +608,7 @@ class SSeriesExplorerApp(tk.Tk):
             self._history.append(resolved)
             self._history_index = len(self._history) - 1
         self.scan_a()
+        self._select_navigation_path(resolved)
 
     def go_back(self) -> None:
         if self._history_index > 0:
@@ -791,7 +864,6 @@ class SSeriesExplorerApp(tk.Tk):
             self.clipboard_clear()
             self.clipboard_append(str(row.record.path))
 
-
     def create_folder(self) -> None:
         root = self._validated_folder(self.folder_a.get(), "aktueller Ordner")
         if not root:
@@ -806,6 +878,7 @@ class SSeriesExplorerApp(tk.Tk):
             messagebox.showerror("S-Series Explorer", str(exc))
             return
         self.scan_a()
+        self._refresh_current_navigation_branch()
 
     def rename_selected(self) -> None:
         row = self._selected_row()
@@ -823,6 +896,7 @@ class SSeriesExplorerApp(tk.Tk):
             messagebox.showerror("S-Series Explorer", str(exc))
             return
         self.scan_a()
+        self._refresh_current_navigation_branch()
 
     def delete_selected(self) -> None:
         row = self._selected_row()
@@ -840,6 +914,7 @@ class SSeriesExplorerApp(tk.Tk):
             messagebox.showerror("S-Series Explorer", str(exc))
             return
         self.scan_a()
+        self._refresh_current_navigation_branch()
 
     def copy_file_selected(self) -> None:
         row = self._selected_row()
@@ -875,6 +950,7 @@ class SSeriesExplorerApp(tk.Tk):
             messagebox.showerror("S-Series Explorer", str(exc))
             return
         self.scan_a()
+        self._refresh_current_navigation_branch()
 
     def export_csv(self) -> None:
         if not self.visible_rows:
@@ -926,20 +1002,39 @@ class SSeriesExplorerApp(tk.Tk):
 
 
 def _navigation_roots() -> list[Path]:
+    roots: list[Path] = []
+    home = Path.home().expanduser().resolve()
+    if home.exists():
+        roots.append(home)
     if os.name == "nt":
         bitmask = ctypes.windll.kernel32.GetLogicalDrives()
-        return [
+        roots.extend(
             Path(f"{chr(65 + index)}:/")
             for index in range(26)
             if bitmask & (1 << index)
-        ]
-    return [Path("/")]
+        )
+    else:
+        roots.append(Path("/"))
+    return _unique_paths(roots)
 
 
 def _navigation_label(path: Path) -> str:
+    if path == Path.home().expanduser().resolve():
+        return f"Home ({path})"
     if os.name == "nt" and path.drive:
         return f"Lokaler Datenträger ({path.drive})"
     return str(path)
+
+
+def _unique_paths(paths: list[Path]) -> list[Path]:
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for path in paths:
+        resolved = path.expanduser().resolve()
+        if resolved not in seen:
+            unique.append(resolved)
+            seen.add(resolved)
+    return unique
 
 
 def _human_size(size: int) -> str:
