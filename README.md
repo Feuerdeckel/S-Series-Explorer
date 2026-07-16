@@ -19,18 +19,31 @@ Ein kompakter Windows-Dateiexplorer für S-Series-/S1000D-Arbeitsbestände.
 ## Start unter Windows
 
 1. Python 3.11 oder neuer installieren. Bei der Installation `tkinter` aktiviert lassen.
-2. Repository öffnen und installieren:
+2. Das Repository herunterladen oder klonen.
+3. Ohne Installation und ohne Internetzugriff starten:
 
 ```powershell
-py -m pip install -e .
-py -m s_series_explorer
+.\run.bat
 ```
 
-Alternativ:
+Alternativ direkt mit Python:
 
 ```powershell
+py .\launcher.py
+```
+
+Der portable Start benötigt weder `pip` noch externe Python-Pakete. Dadurch funktioniert er auch in Firmennetzen, in denen ein Proxy den Zugriff auf PyPI blockiert.
+
+### Optionale Installation
+
+Nur wenn ein Kommando wie `s-series-explorer` systemweit verfügbar sein soll:
+
+```powershell
+py -m pip install --no-build-isolation --no-deps -e .
 s-series-explorer
 ```
+
+`--no-build-isolation` verhindert, dass `pip` für den Build erneut `setuptools` aus dem Internet herunterladen will. Sollte die lokale `setuptools`-Version zu alt sein, verwenden Sie stattdessen den portablen Start über `run.bat`.
 
 ## Windows-EXE bauen
 
