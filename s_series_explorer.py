@@ -9,9 +9,9 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from tkinter import BOTH, END, LEFT, RIGHT, X, Y, Button, Entry, Frame, Label, Menu, Tk, filedialog, messagebox, simpledialog, ttk
+from tkinter import BOTH, END, HORIZONTAL, LEFT, RIGHT, X, Y, Button, Entry, Frame, Label, Menu, PhotoImage, Tk, filedialog, messagebox, simpledialog, ttk
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
 
 
 @dataclass(frozen=True)
@@ -36,6 +36,7 @@ class SSeriesExplorer:
         self.clipboard_path: Path | None = None
         self.clipboard_mode: str | None = None
         self.show_hidden = False
+        self.file_icons: dict[str, PhotoImage] = {}
 
         self._build_ui()
         self.open_path(self.current_path)
@@ -53,28 +54,45 @@ class SSeriesExplorer:
         self.path_entry.bind("<Return>", lambda _event: self.open_path(Path(self.path_entry.get())))
         Button(top, text="Öffnen", command=lambda: self.open_path(Path(self.path_entry.get()))).pack(side=LEFT)
 
-        main = Frame(self.root)
+        main = ttk.Panedwindow(self.root, orient=HORIZONTAL)
         main.pack(fill=BOTH, expand=True, padx=8, pady=(0, 8))
 
-        columns = ("name", "kind", "size", "modified")
-        self.tree = ttk.Treeview(main, columns=columns, show="headings", selectmode="browse")
-        self.tree.heading("name", text="Name", command=lambda: self.sort_by("name"))
+        sidebar = Frame(main)
+        detail_area = Frame(main)
+        main.add(sidebar, weight=1)
+        main.add(detail_area, weight=4)
+
+        self.folder_tree = ttk.Treeview(sidebar, show="tree", selectmode="browse")
+        self.folder_tree.heading("#0", text="Ordnerstruktur")
+        self.folder_tree.pack(side=LEFT, fill=BOTH, expand=True)
+        folder_scrollbar = ttk.Scrollbar(sidebar, orient="vertical", command=self.folder_tree.yview)
+        folder_scrollbar.pack(side=RIGHT, fill=Y)
+        self.folder_tree.configure(yscrollcommand=folder_scrollbar.set)
+        self.folder_tree.bind("<<TreeviewOpen>>", self.expand_folder_node)
+        self.folder_tree.bind("<<TreeviewSelect>>", self.open_selected_folder_node)
+
+        columns = ("kind", "size", "modified")
+        self.tree = ttk.Treeview(detail_area, columns=columns, show="tree headings", selectmode="browse")
+        self.tree.heading("#0", text="Name", command=lambda: self.sort_by("#0"))
         self.tree.heading("kind", text="Typ", command=lambda: self.sort_by("kind"))
         self.tree.heading("size", text="Größe", command=lambda: self.sort_by("size"))
         self.tree.heading("modified", text="Geändert", command=lambda: self.sort_by("modified"))
-        self.tree.column("name", width=420, anchor="w")
+        self.tree.column("#0", width=420, anchor="w")
         self.tree.column("kind", width=130, anchor="w")
         self.tree.column("size", width=110, anchor="e")
         self.tree.column("modified", width=170, anchor="w")
         self.tree.pack(side=LEFT, fill=BOTH, expand=True)
 
-        scrollbar = ttk.Scrollbar(main, orient="vertical", command=self.tree.yview)
+        scrollbar = ttk.Scrollbar(detail_area, orient="vertical", command=self.tree.yview)
         scrollbar.pack(side=RIGHT, fill=Y)
         self.tree.configure(yscrollcommand=scrollbar.set)
 
         self.tree.bind("<Double-1>", lambda _event: self.open_selected())
         self.tree.bind("<Return>", lambda _event: self.open_selected())
         self.tree.bind("<Button-3>", self.show_context_menu)
+
+        self._create_file_icons()
+        self._populate_folder_roots()
 
         bottom = Frame(self.root, padx=8)
         bottom.pack(fill=X, pady=(0, 8))
@@ -97,6 +115,132 @@ class SSeriesExplorer:
         self.context_menu.add_command(label="Umbenennen", command=self.rename_selected)
         self.context_menu.add_command(label="Löschen", command=self.delete_selected)
 
+    def _create_file_icons(self) -> None:
+        self.file_icons = {
+            "folder": self._solid_icon("#f4c542"),
+            "file": self._solid_icon("#8aa4c8"),
+            "text": self._solid_icon("#6dbf73"),
+            "image": self._solid_icon("#c084fc"),
+            "code": self._solid_icon("#f97316"),
+            "archive": self._solid_icon("#a16207"),
+            "pdf": self._solid_icon("#ef4444"),
+        }
+
+    def _solid_icon(self, color: str) -> PhotoImage:
+        icon = PhotoImage(width=16, height=16)
+        icon.put(color, to=(2, 2, 14, 14))
+        icon.put("#444444", to=(2, 2, 14, 3))
+        icon.put("#444444", to=(2, 13, 14, 14))
+        icon.put("#444444", to=(2, 2, 3, 14))
+        icon.put("#444444", to=(13, 2, 14, 14))
+        return icon
+
+    def icon_for_path(self, path: Path) -> PhotoImage:
+        return self.file_icons[self._icon_key_for_path(path, path.is_dir())]
+
+    @staticmethod
+    def _icon_key_for_path(path: Path, is_dir: bool = False) -> str:
+        if is_dir:
+            return "folder"
+        suffix = path.suffix.lower()
+        if suffix in {".txt", ".md", ".log", ".csv"}:
+            return "text"
+        if suffix in {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp"}:
+            return "image"
+        if suffix in {".py", ".js", ".ts", ".html", ".css", ".json", ".xml", ".yml", ".yaml"}:
+            return "code"
+        if suffix in {".zip", ".rar", ".7z", ".tar", ".gz"}:
+            return "archive"
+        if suffix == ".pdf":
+            return "pdf"
+        return "file"
+
+    def _populate_folder_roots(self) -> None:
+        for node in self.folder_tree.get_children():
+            self.folder_tree.delete(node)
+        roots = [Path.home()]
+        filesystem_root = Path.home().anchor
+        if filesystem_root:
+            root_path = Path(filesystem_root)
+            if root_path not in roots:
+                roots.insert(0, root_path)
+        for root_path in roots:
+            self._insert_folder_node("", root_path)
+
+    def _insert_folder_node(self, parent: str, path: Path) -> str:
+        node = self.folder_tree.insert(parent, END, text=str(path), image=self.file_icons["folder"], tags=(str(path),))
+        if self._has_child_folder(path):
+            self.folder_tree.insert(node, END, text="", tags=("__placeholder__",))
+        return node
+
+    def _has_child_folder(self, path: Path) -> bool:
+        try:
+            return any(child.is_dir() and (self.show_hidden or not child.name.startswith(".")) for child in path.iterdir())
+        except OSError:
+            return False
+
+    def expand_folder_node(self, _event: object) -> None:
+        node = self.folder_tree.focus()
+        if not node:
+            return
+        children = self.folder_tree.get_children(node)
+        if len(children) == 1 and self.folder_tree.item(children[0], "tags") == ("__placeholder__",):
+            self.folder_tree.delete(children[0])
+            path = self._folder_node_path(node)
+            if path is None:
+                return
+            try:
+                child_paths = sorted(path.iterdir(), key=lambda item: item.name.lower())
+            except OSError:
+                child_paths = []
+            for child in child_paths:
+                try:
+                    is_visible_folder = child.is_dir() and (self.show_hidden or not child.name.startswith("."))
+                except OSError:
+                    is_visible_folder = False
+                if is_visible_folder:
+                    self._insert_folder_node(node, child)
+
+    def open_selected_folder_node(self, _event: object) -> None:
+        path = self._folder_node_path(self.folder_tree.focus())
+        if path is not None and path != self.current_path:
+            self.open_path(path)
+
+    def select_folder_node(self, path: Path) -> None:
+        for node in self.folder_tree.get_children(""):
+            selected = self._select_folder_node_recursive(node, path)
+            if selected:
+                self.folder_tree.selection_set(selected)
+                self.folder_tree.see(selected)
+                break
+
+    def _select_folder_node_recursive(self, node: str, path: Path) -> str | None:
+        node_path = self._folder_node_path(node)
+        if node_path == path:
+            return node
+        if node_path is None:
+            return None
+        try:
+            path.relative_to(node_path)
+        except ValueError:
+            return None
+        self.folder_tree.item(node, open=True)
+        self.folder_tree.focus(node)
+        self.expand_folder_node(object())
+        for child in self.folder_tree.get_children(node):
+            selected = self._select_folder_node_recursive(child, path)
+            if selected:
+                return selected
+        return None
+
+    def _folder_node_path(self, node: str) -> Path | None:
+        if not node:
+            return None
+        tags = self.folder_tree.item(node, "tags")
+        if not tags or tags[0] == "__placeholder__":
+            return None
+        return Path(tags[0])
+
     def open_path(self, path: Path) -> None:
         try:
             path = path.expanduser().resolve()
@@ -109,6 +253,7 @@ class SSeriesExplorer:
             self.path_entry.delete(0, END)
             self.path_entry.insert(0, str(path))
             self.populate()
+            self.select_folder_node(path)
         except Exception as exc:
             messagebox.showerror("Fehler", str(exc))
 
@@ -117,7 +262,8 @@ class SSeriesExplorer:
             self.tree.delete(row)
         rows = self._scan_directory(self.current_path)
         for file_row in rows:
-            self.tree.insert("", END, values=(file_row.name, file_row.kind, file_row.size, file_row.modified), tags=(str(file_row.path),))
+            icon = self.icon_for_path(file_row.path)
+            self.tree.insert("", END, text=file_row.name, image=icon, values=(file_row.kind, file_row.size, file_row.modified), tags=(str(file_row.path),))
         self.status.config(text=f"{len(rows)} Einträge")
 
     def _scan_directory(self, path: Path) -> list[FileRow]:
@@ -247,10 +393,14 @@ class SSeriesExplorer:
 
     def toggle_hidden(self) -> None:
         self.show_hidden = not self.show_hidden
+        self._populate_folder_roots()
         self.refresh()
 
     def sort_by(self, column: str) -> None:
-        rows = [(self.tree.set(item, column), item) for item in self.tree.get_children("")]
+        if column == "#0":
+            rows = [(self.tree.item(item, "text"), item) for item in self.tree.get_children("")]
+        else:
+            rows = [(self.tree.set(item, column), item) for item in self.tree.get_children("")]
         rows.sort(key=lambda value: value[0].lower())
         for index, (_value, item) in enumerate(rows):
             self.tree.move(item, "", index)

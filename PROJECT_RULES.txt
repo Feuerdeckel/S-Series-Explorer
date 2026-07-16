@@ -23,3 +23,7 @@ Version: 1.0.0
 - Dateioperationen sollen lokale Dateisysteme verwenden.
 - Kritische Dateioperationen wie Löschen müssen eine Bestätigung anzeigen.
 - Fehler sollen als Dialog angezeigt werden, damit die Anwendung nicht still abstürzt.
+
+6. Explorer-Ansicht
+- Die linke Seite zeigt eine Ordner-Baumstruktur zur schnellen Navigation.
+- In der Dateiliste werden Icons neben Dateinamen angezeigt, damit Dateiarten visuell schneller erkennbar sind.
