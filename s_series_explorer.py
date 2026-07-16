@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import BOTH, END, HORIZONTAL, LEFT, RIGHT, X, Y, Button, Entry, Frame, Label, Menu, PhotoImage, Tk, filedialog, messagebox, simpledialog, ttk
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 
 @dataclass(frozen=True)
@@ -69,7 +69,9 @@ class SSeriesExplorer:
         folder_scrollbar.pack(side=RIGHT, fill=Y)
         self.folder_tree.configure(yscrollcommand=folder_scrollbar.set)
         self.folder_tree.bind("<<TreeviewOpen>>", self.expand_folder_node)
-        self.folder_tree.bind("<<TreeviewSelect>>", self.open_selected_folder_node)
+        self.folder_tree.bind("<ButtonRelease-1>", self.handle_folder_tree_click)
+        self.folder_tree.bind("<Double-1>", self.open_selected_folder_node)
+        self.folder_tree.bind("<Return>", self.open_selected_folder_node)
 
         columns = ("kind", "size", "modified")
         self.tree = ttk.Treeview(detail_area, columns=columns, show="tree headings", selectmode="browse")
@@ -87,8 +89,8 @@ class SSeriesExplorer:
         scrollbar.pack(side=RIGHT, fill=Y)
         self.tree.configure(yscrollcommand=scrollbar.set)
 
-        self.tree.bind("<Double-1>", lambda _event: self.open_selected())
-        self.tree.bind("<Return>", lambda _event: self.open_selected())
+        self.tree.bind("<Double-1>", self.open_selected_from_event)
+        self.tree.bind("<Return>", self.open_selected_from_event)
         self.tree.bind("<Button-3>", self.show_context_menu)
 
         self._create_file_icons()
@@ -179,8 +181,8 @@ class SSeriesExplorer:
         except OSError:
             return False
 
-    def expand_folder_node(self, _event: object) -> None:
-        node = self.folder_tree.focus()
+    def expand_folder_node(self, event: object | None = None) -> None:
+        node = self._event_tree_item(event, self.folder_tree) or self.folder_tree.focus()
         if not node:
             return
         children = self.folder_tree.get_children(node)
@@ -201,8 +203,17 @@ class SSeriesExplorer:
                 if is_visible_folder:
                     self._insert_folder_node(node, child)
 
-    def open_selected_folder_node(self, _event: object) -> None:
-        path = self._folder_node_path(self.folder_tree.focus())
+    def handle_folder_tree_click(self, event: object) -> None:
+        node = self._event_tree_item(event, self.folder_tree)
+        if not node or self._event_tree_element(event, self.folder_tree) == "Treeitem.indicator":
+            return
+        self.folder_tree.focus(node)
+        self.folder_tree.selection_set(node)
+        self.open_selected_folder_node()
+
+    def open_selected_folder_node(self, _event: object | None = None) -> None:
+        node = self._event_tree_item(_event, self.folder_tree) or self.folder_tree.focus()
+        path = self._folder_node_path(node)
         if path is not None and path != self.current_path:
             self.open_path(path)
 
@@ -226,7 +237,7 @@ class SSeriesExplorer:
             return None
         self.folder_tree.item(node, open=True)
         self.folder_tree.focus(node)
-        self.expand_folder_node(object())
+        self.expand_folder_node()
         for child in self.folder_tree.get_children(node):
             selected = self._select_folder_node_recursive(child, path)
             if selected:
@@ -287,6 +298,13 @@ class SSeriesExplorer:
             return None
         values = self.tree.item(selection[0], "tags")
         return Path(values[0]) if values else None
+
+    def open_selected_from_event(self, event: object | None = None) -> None:
+        node = self._event_tree_item(event, self.tree)
+        if node:
+            self.tree.focus(node)
+            self.tree.selection_set(node)
+        self.open_selected()
 
     def open_selected(self) -> None:
         path = self.selected_path()
@@ -406,8 +424,24 @@ class SSeriesExplorer:
             self.tree.move(item, "", index)
 
     def show_context_menu(self, event: object) -> None:
+        node = self._event_tree_item(event, self.tree)
+        if node:
+            self.tree.focus(node)
+            self.tree.selection_set(node)
         pointer_event = event  # Tkinter event object with x_root/y_root attributes.
         self.context_menu.tk_popup(pointer_event.x_root, pointer_event.y_root)  # type: ignore[attr-defined]
+
+    @staticmethod
+    def _event_tree_item(event: object | None, tree: ttk.Treeview) -> str:
+        if event is None or not hasattr(event, "x") or not hasattr(event, "y"):
+            return ""
+        return tree.identify_row(event.y)  # type: ignore[attr-defined]
+
+    @staticmethod
+    def _event_tree_element(event: object | None, tree: ttk.Treeview) -> str:
+        if event is None or not hasattr(event, "x") or not hasattr(event, "y"):
+            return ""
+        return tree.identify_element(event.x, event.y)  # type: ignore[attr-defined]
 
     @staticmethod
     def _format_size(size: int) -> str:
