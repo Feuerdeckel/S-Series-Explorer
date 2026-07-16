@@ -1,13 +1,13 @@
-' Version: 1.0.0
+' Version: 1.1.0
 Option Explicit
 
-Dim fso, shell, projectDir, launcherPath, logPath, command
+Dim fso, shell, projectDir, launcherPath, command
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
 projectDir = fso.GetParentFolderName(WScript.ScriptFullName)
-launcherPath = fso.BuildPath(projectDir, "launcher.py")
-logPath = fso.BuildPath(projectDir, "startup.log")
+launcherPath = fso.BuildPath(projectDir, "launcher.pyw")
 
-command = "cmd.exe /d /c cd /d """ & projectDir & """ && py """ & launcherPath & """ > """ & logPath & """ 2>&1"
-shell.Run command, 0, False
+command = "pyw """ & launcherPath & """"
+shell.CurrentDirectory = projectDir
+shell.Run command, 1, False
