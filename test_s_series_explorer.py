@@ -4,7 +4,7 @@ from pathlib import Path
 
 from s_series_explorer import SSeriesExplorer
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 
 def test_format_size() -> None:
@@ -21,3 +21,13 @@ def test_unique_target(tmp_path: Path) -> None:
     copy_1.write_text("demo", encoding="utf-8")
 
     assert SSeriesExplorer._unique_target(original) == tmp_path / "demo - Kopie 2.txt"
+
+
+def test_icon_key_for_path() -> None:
+    assert SSeriesExplorer._icon_key_for_path(Path("demo"), is_dir=True) == "folder"
+    assert SSeriesExplorer._icon_key_for_path(Path("notes.txt")) == "text"
+    assert SSeriesExplorer._icon_key_for_path(Path("photo.png")) == "image"
+    assert SSeriesExplorer._icon_key_for_path(Path("script.py")) == "code"
+    assert SSeriesExplorer._icon_key_for_path(Path("backup.zip")) == "archive"
+    assert SSeriesExplorer._icon_key_for_path(Path("manual.pdf")) == "pdf"
+    assert SSeriesExplorer._icon_key_for_path(Path("unknown.bin")) == "file"
