@@ -7,7 +7,9 @@ from typing import Callable, Iterable
 
 from .corel_designer import inspect_corel_designer
 from .filename_parser import parse_filename
-from .models import FileRecord
+from .models import CorelDesignerInfo, FileRecord
+
+__version__ = "0.2.0"
 
 ProgressCallback = Callable[[int, str], None]
 
@@ -17,13 +19,14 @@ def scan_folder(
     *,
     recursive: bool = True,
     calculate_hashes: bool = False,
+    include_directories: bool = False,
     progress: ProgressCallback | None = None,
 ) -> list[FileRecord]:
     root = root.expanduser().resolve()
     if not root.is_dir():
         raise NotADirectoryError(str(root))
 
-    paths = list(_iter_files(root, recursive=recursive))
+    paths = list(_iter_entries(root, recursive=recursive, include_directories=include_directories))
     records: list[FileRecord] = []
     total = len(paths)
 
@@ -34,8 +37,8 @@ def scan_folder(
             continue
 
         parsed = parse_filename(path.name)
-        corel = inspect_corel_designer(path)
-        digest = sha256_file(path) if calculate_hashes else ""
+        corel = CorelDesignerInfo() if path.is_dir() else inspect_corel_designer(path)
+        digest = sha256_file(path) if calculate_hashes and path.is_file() else ""
         record = FileRecord(
             root=root,
             path=path,
@@ -72,8 +75,8 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
-def _iter_files(root: Path, *, recursive: bool) -> Iterable[Path]:
+def _iter_entries(root: Path, *, recursive: bool, include_directories: bool) -> Iterable[Path]:
     iterator = root.rglob("*") if recursive else root.glob("*")
     for path in iterator:
-        if path.is_file():
+        if path.is_file() or (include_directories and path.is_dir()):
             yield path

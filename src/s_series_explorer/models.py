@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+__version__ = "0.2.0"
+
 
 @dataclass(slots=True)
 class ParsedFilename:

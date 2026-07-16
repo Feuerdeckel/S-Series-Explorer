@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import os
 import queue
 import subprocess
@@ -12,6 +13,8 @@ from .compare import COMPARISON_MODES, MODE_RELATIVE_PATH, compare_records
 from .csv_export import export_rows
 from .models import ComparisonRow, FileRecord
 from .scanner import scan_folder
+
+__version__ = "0.2.0"
 
 _COLUMNS = [
     ("status", "Vergleich", 115),
@@ -56,6 +59,7 @@ class SSeriesExplorerApp(tk.Tk):
         self.status_filter = tk.StringVar(value="Alle")
         self.progress_value = tk.IntVar(value=0)
         self.status_text = tk.StringVar(value="Bereit")
+        self.current_folder = tk.StringVar()
 
         self.records_a: list[FileRecord] = []
         self.records_b: list[FileRecord] = []
@@ -63,6 +67,8 @@ class SSeriesExplorerApp(tk.Tk):
         self.visible_rows: list[ComparisonRow] = []
         self.row_lookup: dict[str, ComparisonRow] = {}
         self._result_queue: queue.Queue[tuple[str, object]] = queue.Queue()
+
+        self._navigation_lookup: dict[str, Path] = {}
 
         self._build_ui()
         self.after(100, self._poll_queue)
@@ -75,7 +81,7 @@ class SSeriesExplorerApp(tk.Tk):
         toolbar.grid(row=0, column=0, sticky="ew")
         toolbar.columnconfigure(1, weight=1)
 
-        ttk.Label(toolbar, text="Ordner A").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ttk.Label(toolbar, text="Adresse / Ordner A").grid(row=0, column=0, sticky="w", padx=(0, 6))
         ttk.Entry(toolbar, textvariable=self.folder_a).grid(row=0, column=1, sticky="ew")
         ttk.Button(toolbar, text="Durchsuchen…", command=lambda: self._choose_folder(self.folder_a)).grid(
             row=0, column=2, padx=6
@@ -89,7 +95,7 @@ class SSeriesExplorerApp(tk.Tk):
 
         actions = ttk.Frame(toolbar)
         actions.grid(row=0, column=3, rowspan=2, sticky="ns", padx=(8, 0))
-        ttk.Button(actions, text="Ordner A anzeigen", command=self.scan_a).grid(row=0, column=0, padx=2)
+        ttk.Button(actions, text="Ordner anzeigen", command=self.scan_a).grid(row=0, column=0, padx=2)
         ttk.Button(actions, text="Vergleichen", command=self.compare_folders).grid(row=0, column=1, padx=2)
         ttk.Button(actions, text="CSV exportieren", command=self.export_csv).grid(row=1, column=0, padx=2, pady=(6, 0))
         ttk.Button(actions, text="Leeren", command=self.clear).grid(row=1, column=1, padx=2, pady=(6, 0))
@@ -122,8 +128,28 @@ class SSeriesExplorerApp(tk.Tk):
         search.bind("<KeyRelease>", lambda _event: self.apply_filter())
         ttk.Label(filters, text="Suche über alle Spalten").grid(row=0, column=6, padx=(6, 0))
 
-        pane = ttk.Panedwindow(self, orient=tk.VERTICAL)
-        pane.grid(row=2, column=0, sticky="nsew", padx=8)
+        main_pane = ttk.Panedwindow(self, orient=tk.HORIZONTAL)
+        main_pane.grid(row=2, column=0, sticky="nsew", padx=8)
+
+        sidebar = ttk.Frame(main_pane)
+        sidebar.columnconfigure(0, weight=1)
+        sidebar.rowconfigure(1, weight=1)
+        main_pane.add(sidebar, weight=1)
+
+        ttk.Label(sidebar, text="Dieser PC", font=("TkDefaultFont", 10, "bold")).grid(
+            row=0, column=0, sticky="w", pady=(0, 4)
+        )
+        self.navigation_tree = ttk.Treeview(sidebar, show="tree", selectmode="browse")
+        navigation_scroll = ttk.Scrollbar(sidebar, orient=tk.VERTICAL, command=self.navigation_tree.yview)
+        self.navigation_tree.configure(yscrollcommand=navigation_scroll.set)
+        self.navigation_tree.grid(row=1, column=0, sticky="nsew")
+        navigation_scroll.grid(row=1, column=1, sticky="ns")
+        self.navigation_tree.bind("<<TreeviewOpen>>", self._expand_navigation_item)
+        self.navigation_tree.bind("<<TreeviewSelect>>", self._select_navigation_item)
+        self.navigation_tree.bind("<Double-1>", lambda _event: self.scan_a())
+
+        pane = ttk.Panedwindow(main_pane, orient=tk.VERTICAL)
+        main_pane.add(pane, weight=5)
 
         table_frame = ttk.Frame(pane)
         table_frame.columnconfigure(0, weight=1)
@@ -174,16 +200,77 @@ class SSeriesExplorerApp(tk.Tk):
         self.context_menu.add_command(label="Im Explorer anzeigen", command=self.reveal_selected)
         self.context_menu.add_command(label="Pfad kopieren", command=self.copy_selected_path)
 
+        self._populate_navigation_roots()
+
+    def _populate_navigation_roots(self) -> None:
+        self.navigation_tree.delete(*self.navigation_tree.get_children())
+        self._navigation_lookup.clear()
+        for root in _navigation_roots():
+            label = _navigation_label(root)
+            item = self.navigation_tree.insert("", "end", text=label, open=False)
+            self._navigation_lookup[item] = root
+            self._add_navigation_placeholder(item, root)
+
+    def _expand_navigation_item(self, _event=None) -> None:
+        item = self.navigation_tree.focus()
+        path = self._navigation_lookup.get(item)
+        if path is not None:
+            self._load_navigation_children(item, path)
+
+    def _select_navigation_item(self, _event=None) -> None:
+        item = self.navigation_tree.focus()
+        path = self._navigation_lookup.get(item)
+        if path is not None:
+            self.folder_a.set(str(path))
+            self.current_folder.set(str(path))
+            self.status_text.set(f"Ausgewählt: {path}")
+
+    def _load_navigation_children(self, item: str, path: Path) -> None:
+        children = self.navigation_tree.get_children(item)
+        if len(children) == 1 and self.navigation_tree.item(children[0], "text") == "Lädt…":
+            self.navigation_tree.delete(children[0])
+        else:
+            return
+        try:
+            directories = sorted(
+                (entry for entry in path.iterdir() if entry.is_dir()),
+                key=lambda entry: entry.name.casefold(),
+            )
+        except (OSError, PermissionError):
+            self.navigation_tree.insert(item, "end", text="Zugriff verweigert", values=("error",))
+            return
+        for directory in directories:
+            child = self.navigation_tree.insert(item, "end", text=directory.name or str(directory), open=False)
+            self._navigation_lookup[child] = directory
+            self._add_navigation_placeholder(child, directory)
+
+    def _add_navigation_placeholder(self, item: str, path: Path) -> None:
+        try:
+            has_child = any(entry.is_dir() for entry in path.iterdir())
+        except (OSError, PermissionError):
+            has_child = False
+        if has_child:
+            self.navigation_tree.insert(item, "end", text="Lädt…")
+
     def _choose_folder(self, variable: tk.StringVar) -> None:
         selected = filedialog.askdirectory(initialdir=variable.get() or None)
         if selected:
             variable.set(selected)
+            self.current_folder.set(selected)
 
     def scan_a(self) -> None:
         root = self._validated_folder(self.folder_a.get(), "Ordner A")
         if not root:
             return
-        self._start_worker("scan_a", lambda: scan_folder(root, recursive=self.recursive.get(), progress=self._progress))
+        self._start_worker(
+            "scan_a",
+            lambda: scan_folder(
+                root,
+                recursive=self.recursive.get(),
+                include_directories=True,
+                progress=self._progress,
+            ),
+        )
 
     def compare_folders(self) -> None:
         root_a = self._validated_folder(self.folder_a.get(), "Ordner A")
@@ -233,7 +320,8 @@ class SSeriesExplorerApp(tk.Tk):
                     self.records_b = []
                     self.all_rows = [ComparisonRow(status="Ordner A", left=item) for item in self.records_a]
                     self.apply_filter()
-                    self.status_text.set(f"{len(self.records_a)} Dateien in Ordner A")
+                    self.current_folder.set(self.folder_a.get())
+                    self.status_text.set(f"{len(self.records_a)} Elemente in {self.folder_a.get()}")
                     self.progress_value.set(100)
                 elif operation == "compare":
                     self.records_a, self.records_b, self.all_rows = payload
@@ -288,7 +376,7 @@ class SSeriesExplorerApp(tk.Tk):
         status = row.status if parsed.is_valid else f"{row.status} / Name fehlerhaft"
         return (
             status,
-            parsed.object_type,
+            "Ordner" if record.path.is_dir() else parsed.object_type,
             *(parsed.segment(index) for index in range(12)),
             parsed.issue,
             parsed.in_work,
@@ -296,7 +384,7 @@ class SSeriesExplorerApp(tk.Tk):
             parsed.country,
             record.corel.display,
             parsed.extension,
-            _human_size(record.size),
+            "" if record.path.is_dir() else _human_size(record.size),
             record.modified_display,
             record.relative_path,
             record.filename,
@@ -416,6 +504,19 @@ class SSeriesExplorerApp(tk.Tk):
         for index, item in enumerate(children):
             self.tree.move(item, "", index)
         self.tree.heading(column, command=lambda: self._sort_by(column, not descending))
+
+
+def _navigation_roots() -> list[Path]:
+    if os.name == "nt":
+        bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+        return [Path(f"{chr(65 + index)}:/") for index in range(26) if bitmask & (1 << index)]
+    return [Path("/")]
+
+
+def _navigation_label(path: Path) -> str:
+    if os.name == "nt" and path.drive:
+        return f"Lokaler Datenträger ({path.drive})"
+    return str(path)
 
 
 def _human_size(size: int) -> str:
