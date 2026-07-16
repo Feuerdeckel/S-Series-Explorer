@@ -2,7 +2,7 @@
 
 Ein kompakter Windows-Dateiexplorer für S-Series-/S1000D-Arbeitsbestände.
 
-## MVP-Funktionen
+## Funktionen
 
 - Dateinamen werden in einer durchgehenden Tabellenzeile in einzelne Segmente zerlegt.
 - S1000D-nahe Präfixe wie `DMC`, `PMC`, `ICN`, `COM`, `DDN`, `DML`, `CSN` und `SMC` werden erkannt.
@@ -15,6 +15,9 @@ Ein kompakter Windows-Dateiexplorer für S-Series-/S1000D-Arbeitsbestände.
 - Unterschiede werden als **Identisch**, **Geändert**, **Nur Ordner A** oder **Nur Ordner B** dargestellt.
 - `.des`-Dateien werden auf Corel-DESIGNER-/CorelDRAW-Formatmarker untersucht.
 - Volltextfilter über alle Spalten, Statusfilter, CSV-Export und Explorer-Kontextaktionen.
+- Explorer-Navigation mit Adressleiste, Zurück/Vor/Hoch, direktem Öffnen von Ordnern und typischen Dateiaktionen.
+- Der Ordnervergleich ist als separate Funktion über das Funktions-Dropdown auswählbar.
+- Dateiaktionen im Kontextmenü und per Tastatur: Kopieren, Ausschneiden, Einfügen, Umbenennen, Löschen und neue Ordner erstellen.
 
 ## Start unter Windows
 
