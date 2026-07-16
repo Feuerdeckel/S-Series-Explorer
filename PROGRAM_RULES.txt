@@ -1,0 +1,8 @@
+S-Series Explorer - Programmregeln
+Version: 1.0.0
+
+1. Vor jeder Codeänderung muss diese Datei gelesen werden.
+2. Wenn einzelne Skripte geändert werden, muss deren Versionsnummer erhöht werden.
+3. Alte Versionsnummern sollen entfernt werden, sodass pro Datei nur eine Versionsnummer existiert.
+4. Die Anwendung soll sich für Dateinavigation möglichst wie der Windows Explorer verhalten.
+5. Explorer-Zusatzfunktionen wie S-Series-Dateinamenanalyse, Vergleich, Filter und CSV-Export bleiben erhalten.
