@@ -3,18 +3,19 @@ from __future__ import annotations
 import ctypes
 import os
 import queue
+import shutil
 import subprocess
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from .compare import COMPARISON_MODES, MODE_RELATIVE_PATH, compare_records
 from .csv_export import export_rows
 from .models import ComparisonRow, FileRecord
 from .scanner import scan_folder
 
-__version__ = "0.2.0"
+__version__ = "0.3.1"
 
 _COLUMNS = [
     ("status", "Vergleich", 115),
@@ -59,7 +60,12 @@ class SSeriesExplorerApp(tk.Tk):
         self.status_filter = tk.StringVar(value="Alle")
         self.progress_value = tk.IntVar(value=0)
         self.status_text = tk.StringVar(value="Bereit")
-        self.current_folder = tk.StringVar()
+        self.action_mode = tk.StringVar(value="Explorer: Ordner anzeigen")
+        self.current_folder = tk.StringVar(value=str(Path.home()))
+        self._history: list[Path] = []
+        self._history_index = -1
+        self._clipboard_path: Path | None = None
+        self._clipboard_cut = False
 
         self.records_a: list[FileRecord] = []
         self.records_b: list[FileRecord] = []
@@ -82,10 +88,18 @@ class SSeriesExplorerApp(tk.Tk):
         toolbar.columnconfigure(1, weight=1)
 
         ttk.Label(toolbar, text="Adresse / Ordner A").grid(row=0, column=0, sticky="w", padx=(0, 6))
-        ttk.Entry(toolbar, textvariable=self.folder_a).grid(row=0, column=1, sticky="ew")
-        ttk.Button(toolbar, text="Durchsuchen…", command=lambda: self._choose_folder(self.folder_a)).grid(
-            row=0, column=2, padx=6
-        )
+        address_entry = ttk.Entry(toolbar, textvariable=self.folder_a)
+        address_entry.grid(row=0, column=1, sticky="ew")
+        address_entry.bind("<Return>", lambda _event: self.open_address())
+        address_actions = ttk.Frame(toolbar)
+        address_actions.grid(row=0, column=2, padx=6)
+        ttk.Button(address_actions, text="Zurück", command=self.go_back).grid(row=0, column=0, padx=1)
+        ttk.Button(address_actions, text="Vor", command=self.go_forward).grid(row=0, column=1, padx=1)
+        ttk.Button(address_actions, text="Hoch", command=self.go_up).grid(row=0, column=2, padx=1)
+        ttk.Button(address_actions, text="Öffnen", command=self.open_address).grid(row=0, column=3, padx=1)
+        toolbar.bind_all("<Alt-Left>", lambda _event: self.go_back())
+        toolbar.bind_all("<Alt-Right>", lambda _event: self.go_forward())
+        toolbar.bind_all("<Alt-Up>", lambda _event: self.go_up())
 
         ttk.Label(toolbar, text="Ordner B").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=(6, 0))
         ttk.Entry(toolbar, textvariable=self.folder_b).grid(row=1, column=1, sticky="ew", pady=(6, 0))
@@ -95,10 +109,17 @@ class SSeriesExplorerApp(tk.Tk):
 
         actions = ttk.Frame(toolbar)
         actions.grid(row=0, column=3, rowspan=2, sticky="ns", padx=(8, 0))
-        ttk.Button(actions, text="Ordner anzeigen", command=self.scan_a).grid(row=0, column=0, padx=2)
-        ttk.Button(actions, text="Vergleichen", command=self.compare_folders).grid(row=0, column=1, padx=2)
-        ttk.Button(actions, text="CSV exportieren", command=self.export_csv).grid(row=1, column=0, padx=2, pady=(6, 0))
-        ttk.Button(actions, text="Leeren", command=self.clear).grid(row=1, column=1, padx=2, pady=(6, 0))
+        ttk.Label(actions, text="Funktion").grid(row=0, column=0, sticky="w", padx=2)
+        ttk.Combobox(
+            actions,
+            textvariable=self.action_mode,
+            values=("Explorer: Ordner anzeigen", "Vergleich: Ordner A gegen B"),
+            state="readonly",
+            width=28,
+        ).grid(row=0, column=1, columnspan=2, padx=2, sticky="ew")
+        ttk.Button(actions, text="Ausführen", command=self.run_selected_function).grid(row=1, column=0, padx=2, pady=(6, 0))
+        ttk.Button(actions, text="CSV exportieren", command=self.export_csv).grid(row=1, column=1, padx=2, pady=(6, 0))
+        ttk.Button(actions, text="Leeren", command=self.clear).grid(row=1, column=2, padx=2, pady=(6, 0))
 
         filters = ttk.Frame(self, padding=(8, 0, 8, 8))
         filters.grid(row=1, column=0, sticky="ew")
@@ -181,6 +202,11 @@ class SSeriesExplorerApp(tk.Tk):
         self.tree.bind("<<TreeviewSelect>>", self._show_details)
         self.tree.bind("<Double-1>", lambda _event: self.open_selected())
         self.tree.bind("<Button-3>", self._show_context_menu)
+        self.tree.bind("<Delete>", lambda _event: self.delete_selected())
+        self.tree.bind("<F2>", lambda _event: self.rename_selected())
+        self.tree.bind("<Control-c>", lambda _event: self.copy_file_selected())
+        self.tree.bind("<Control-x>", lambda _event: self.cut_file_selected())
+        self.tree.bind("<Control-v>", lambda _event: self.paste_file())
 
         details_frame = ttk.LabelFrame(pane, text="Details", padding=6)
         details_frame.columnconfigure(0, weight=1)
@@ -196,11 +222,20 @@ class SSeriesExplorerApp(tk.Tk):
         ttk.Progressbar(statusbar, variable=self.progress_value, maximum=100, length=260).grid(row=0, column=1)
 
         self.context_menu = tk.Menu(self, tearoff=False)
-        self.context_menu.add_command(label="Datei öffnen", command=self.open_selected)
+        self.context_menu.add_command(label="Öffnen", command=self.open_selected)
         self.context_menu.add_command(label="Im Explorer anzeigen", command=self.reveal_selected)
         self.context_menu.add_command(label="Pfad kopieren", command=self.copy_selected_path)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="Kopieren", command=self.copy_file_selected)
+        self.context_menu.add_command(label="Ausschneiden", command=self.cut_file_selected)
+        self.context_menu.add_command(label="Einfügen", command=self.paste_file)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="Neu: Ordner", command=self.create_folder)
+        self.context_menu.add_command(label="Umbenennen", command=self.rename_selected)
+        self.context_menu.add_command(label="Löschen", command=self.delete_selected)
 
         self._populate_navigation_roots()
+        self.navigate_to(Path.home(), add_history=True)
 
     def _populate_navigation_roots(self) -> None:
         self.navigation_tree.delete(*self.navigation_tree.get_children())
@@ -221,9 +256,7 @@ class SSeriesExplorerApp(tk.Tk):
         item = self.navigation_tree.focus()
         path = self._navigation_lookup.get(item)
         if path is not None:
-            self.folder_a.set(str(path))
-            self.current_folder.set(str(path))
-            self.status_text.set(f"Ausgewählt: {path}")
+            self.navigate_to(path, add_history=True)
 
     def _load_navigation_children(self, item: str, path: Path) -> None:
         children = self.navigation_tree.get_children(item)
@@ -256,7 +289,47 @@ class SSeriesExplorerApp(tk.Tk):
         selected = filedialog.askdirectory(initialdir=variable.get() or None)
         if selected:
             variable.set(selected)
-            self.current_folder.set(selected)
+            if variable is self.folder_a:
+                self.navigate_to(Path(selected), add_history=True)
+            else:
+                self.current_folder.set(selected)
+
+    def open_address(self) -> None:
+        self.navigate_to(Path(self.folder_a.get()).expanduser(), add_history=True)
+
+    def navigate_to(self, path: Path, *, add_history: bool) -> None:
+        if not path.is_dir():
+            messagebox.showerror("S-Series Explorer", f"Kein gültiger Ordner:\n{path}")
+            return
+        resolved = path.resolve()
+        self.folder_a.set(str(resolved))
+        self.current_folder.set(str(resolved))
+        if add_history:
+            del self._history[self._history_index + 1 :]
+            self._history.append(resolved)
+            self._history_index = len(self._history) - 1
+        self.scan_a()
+
+    def go_back(self) -> None:
+        if self._history_index > 0:
+            self._history_index -= 1
+            self.navigate_to(self._history[self._history_index], add_history=False)
+
+    def go_forward(self) -> None:
+        if self._history_index + 1 < len(self._history):
+            self._history_index += 1
+            self.navigate_to(self._history[self._history_index], add_history=False)
+
+    def go_up(self) -> None:
+        path = Path(self.folder_a.get()).expanduser()
+        if path.parent != path:
+            self.navigate_to(path.parent, add_history=True)
+
+    def run_selected_function(self) -> None:
+        if self.action_mode.get().startswith("Vergleich"):
+            self.compare_folders()
+        else:
+            self.scan_a()
 
     def scan_a(self) -> None:
         root = self._validated_folder(self.folder_a.get(), "Ordner A")
@@ -445,7 +518,11 @@ class SSeriesExplorerApp(tk.Tk):
     def open_selected(self) -> None:
         row = self._selected_row()
         if row:
-            _open_path(row.record.path)
+            path = row.record.path
+            if path.is_dir():
+                self.navigate_to(path, add_history=True)
+            else:
+                _open_path(path)
 
     def reveal_selected(self) -> None:
         row = self._selected_row()
@@ -462,6 +539,91 @@ class SSeriesExplorerApp(tk.Tk):
         if row:
             self.clipboard_clear()
             self.clipboard_append(str(row.record.path))
+
+
+    def create_folder(self) -> None:
+        root = self._validated_folder(self.folder_a.get(), "aktueller Ordner")
+        if not root:
+            return
+        name = simpledialog.askstring("Neuer Ordner", "Ordnername:", parent=self)
+        if not name:
+            return
+        target = root / name
+        try:
+            target.mkdir()
+        except OSError as exc:
+            messagebox.showerror("S-Series Explorer", str(exc))
+            return
+        self.scan_a()
+
+    def rename_selected(self) -> None:
+        row = self._selected_row()
+        if not row:
+            return
+        old_path = row.record.path
+        new_name = simpledialog.askstring(
+            "Umbenennen", "Neuer Name:", initialvalue=old_path.name, parent=self
+        )
+        if not new_name or new_name == old_path.name:
+            return
+        try:
+            old_path.rename(old_path.with_name(new_name))
+        except OSError as exc:
+            messagebox.showerror("S-Series Explorer", str(exc))
+            return
+        self.scan_a()
+
+    def delete_selected(self) -> None:
+        row = self._selected_row()
+        if not row:
+            return
+        path = row.record.path
+        if not messagebox.askyesno("Löschen", f"{path.name} wirklich löschen?"):
+            return
+        try:
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        except OSError as exc:
+            messagebox.showerror("S-Series Explorer", str(exc))
+            return
+        self.scan_a()
+
+    def copy_file_selected(self) -> None:
+        row = self._selected_row()
+        if row:
+            self._clipboard_path = row.record.path
+            self._clipboard_cut = False
+            self.status_text.set(f"Kopiert: {self._clipboard_path}")
+
+    def cut_file_selected(self) -> None:
+        row = self._selected_row()
+        if row:
+            self._clipboard_path = row.record.path
+            self._clipboard_cut = True
+            self.status_text.set(f"Ausgeschnitten: {self._clipboard_path}")
+
+    def paste_file(self) -> None:
+        if self._clipboard_path is None:
+            return
+        root = self._validated_folder(self.folder_a.get(), "aktueller Ordner")
+        if not root:
+            return
+        target = _unique_destination(root / self._clipboard_path.name)
+        try:
+            if self._clipboard_cut:
+                shutil.move(str(self._clipboard_path), str(target))
+                self._clipboard_path = None
+                self._clipboard_cut = False
+            elif self._clipboard_path.is_dir():
+                shutil.copytree(self._clipboard_path, target)
+            else:
+                shutil.copy2(self._clipboard_path, target)
+        except OSError as exc:
+            messagebox.showerror("S-Series Explorer", str(exc))
+            return
+        self.scan_a()
 
     def export_csv(self) -> None:
         if not self.visible_rows:
@@ -540,3 +702,15 @@ def _open_path(path: Path) -> None:
 def main() -> None:
     app = SSeriesExplorerApp()
     app.mainloop()
+
+
+def _unique_destination(path: Path) -> Path:
+    if not path.exists():
+        return path
+    stem = path.stem
+    suffix = path.suffix
+    for index in range(2, 1000):
+        candidate = path.with_name(f"{stem} - Kopie {index}{suffix}")
+        if not candidate.exists():
+            return candidate
+    raise FileExistsError(f"Kein freier Zielname für {path}")
